@@ -1,8 +1,0 @@
-{
-    "triggerTaskOnSave.tasks": {
-        "Compile Active File": [
-            "**/*.cpp",
-            "**/*.h"
-        ]
-    }
-}
