@@ -8,7 +8,7 @@ char Lexer::peek() const {
     }
     return '\0';
 }
-char Lexer::get() {
+char Lexer::advance() {
     char c = source[pos];
     column++;
     pos++;
@@ -32,27 +32,38 @@ Token Lexer::nextToken() {
     if (std::isalpha(c) || c == '_') {
         std::string identifier;
         while (std::isalnum(peek()) || peek() == '_') {
-            identifier += get();
+            identifier += advance();
         }
 
-        auto it = keywords.find(identifier);
+        auto keyword = keywords.find(identifier);
 
-        if (it != keywords.end()) {
-            return {it->second, identifier, line, column};
-        } else {
-            return {TokenType::Identifier, identifier, line, column - static_cast<int>(identifier.size())};
+        if (keyword != keywords.end()) {
+            return {keyword->second, identifier, line, column};
         }
+
+        auto type = types.find(identifier);
+
+        if (type != types.end()) {
+            return {type->second, identifier, line, column};
+        }
+
+        return {TokenType::Identifier, identifier, line, column};
     }
 
     if (std::isdigit(c)) {
         std::string number;
-        while (std::isdigit(peek())) {
-            number += get();
+        bool isFloat = false;
+        while (std::isdigit(peek()) || (peek() == '.' && !isFloat)) {
+            if (peek() == '.') isFloat = true;
+            number += advance();
         }
-        return {TokenType::Number, number, line, column};
+
+        if (isFloat) return {TokenType::Float, number, line, column};
+
+        return {TokenType::Int, number, line, column};
     }
 
-    char op = get();
+    char op = advance();
     switch (op) {
         default: return {TokenType::Unknown, std::string(1, op), line, column};
         case('+'): return {TokenType::Plus, "+", line, column};
@@ -69,30 +80,52 @@ Token Lexer::nextToken() {
         case(')'): return {TokenType::RParen, ")", line, column};
         case('{'): return {TokenType::LBrace, "{", line, column};
         case('}'): return {TokenType::RBrace, "}", line, column};
+        case('~'): return {TokenType::Tilde, "~", line, column};
         case('='): {
             if (peek() == '=') {
-                get();
+                advance();
                 return {TokenType::EqualEqual, "==", line, column};
             }
             return {TokenType::Equal, "=", line, column};
         }
         case('!'): {
             if (peek() == '=') {
-                get();
+                advance();
                 return {TokenType::NotEqual, "!=", line, column};
             }
             return {TokenType::L_NOT, "!", line, column};
         }
+        case('&'): {
+            if (peek() == '&') {
+                advance();
+                return {TokenType::L_AND, "&&", line, column};
+            }
+            return {TokenType::B_AND, "&", line, column};
+        }
+        case('|'): {
+            if (peek() == '|') {
+                advance();
+                return {TokenType::L_OR, "||", line, column};
+            }
+            return {TokenType::B_OR, "|", line, column};
+        }
+        case('^'): {
+            if (peek() == '^') {
+                advance();
+                return {TokenType::L_XOR, "^^", line, column};
+            }
+            return {TokenType::B_XOR, "^", line, column};
+        }
         case('<'): {
             if (peek() == '=') {
-                get();
+                advance();
                 return {TokenType::LessThanOrEqual, "<=", line, column};
             }
             return {TokenType::LessThan, "<", line, column};
         }
         case('>'): {
             if (peek() == '=') {
-                get();
+                advance();
                 return {TokenType::GreaterThanOrEqual, ">=", line, column};
             }
             return {TokenType::GreaterThan, ">", line, column};
@@ -115,4 +148,15 @@ std::vector<Token> Lexer::tokenize() {
 
 Lexer::Lexer(const std::string& source) : source(source), pos(0), line(1), column(1) {
     
+}
+
+std::string readFile(const std::string& filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        throw std::runtime_error("Could not open file: " + filename);
+    }
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
 }
