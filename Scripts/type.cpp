@@ -1,4 +1,5 @@
 #include <unordered_map>
+#include "ast.h"
 #include "type.h"
 #include <stdexcept>
 
@@ -18,6 +19,10 @@ TokenType SymbolTable::lookup(const std::string& name) const {
 
 bool SymbolTable::exists(const std::string& name) const {
     return table.find(name) != table.end();
+}
+
+void SymbolTable::remove(const std::string& name) {
+    table.erase(name);
 }
 
 TokenType TypeChecker::TypeCheck(ASTNode* node) {
@@ -86,6 +91,18 @@ TokenType TypeChecker::TypeCheck(ASTNode* node) {
         return TokenType::Null;
     }
 
+    if (auto whileNode = dynamic_cast<WhileNode*>(node)) {
+        TokenType condition = TypeCheck(whileNode->condition);
+
+        if (condition != TokenType::Bool) {
+            throw std::runtime_error("If condition must be Bool");
+        }
+
+        TypeCheck(whileNode->body);
+
+        return TokenType::Null;
+    }
+
     if (auto assignNode = dynamic_cast<AssignNode*>(node)) {
         TokenType targetType = symbols.lookup(assignNode->target.value);
         TokenType value = TypeCheck(assignNode->value);
@@ -97,6 +114,51 @@ TokenType TypeChecker::TypeCheck(ASTNode* node) {
         return targetType;
     }
 
+    if (auto funcDecl = dynamic_cast<FuncDeclNode*>(node)) {
+        FuncType current;
+        current.type = funcDecl->returnType.type;
+        for (auto param : funcDecl->parameters) {
+            current.paramTypes.push_back(param.type.type);
+        }
+
+        functions[funcDecl->name.value] = current;
+
+        for (auto param : funcDecl->parameters) {
+            symbols.declare(param.name.value, param.type.type);
+        }
+
+        TypeCheck(funcDecl->body);
+
+        for (auto param : funcDecl->parameters) {
+            symbols.remove(param.name.value);
+        }
+
+        return current.type;
+
+    }
+
+    if (auto callNode = dynamic_cast<CallNode*>(node)) {
+        auto it = functions.find(callNode->name.value);
+        if (it == functions.end()) {
+            throw std::runtime_error("Undefined function:" + callNode->name.value);
+        }
+
+        FuncType typeStruct = it->second;
+
+        if (callNode->arguments.size() != typeStruct.paramTypes.size()) {
+            throw std::runtime_error("Expected " + std::to_string(typeStruct.paramTypes.size()) + " arguments, got " + std::to_string(callNode->arguments.size()));
+        }
+
+        int index = 0;
+        for (auto argument : callNode->arguments) {
+            TokenType type = TypeCheck(argument);
+            if (type != typeStruct.paramTypes[index]) {
+                throw std::runtime_error("Expected type: " + tokenTypeName(typeStruct.paramTypes[index]) + "Got: " + tokenTypeName(type));
+            }
+            index++;
+        }
+        return typeStruct.type;
+    }
     // Add more cases for other node types
     throw std::runtime_error("Unhandled node type");
 }

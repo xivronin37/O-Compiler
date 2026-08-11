@@ -1,8 +1,11 @@
 #include <iostream>
 #include <fstream>
 #include "lexer.h"
+#include "ast.h"
 #include "parser.h"
 #include "type.h"
+#include "codegen.h"
+
 int main() {
     try {
         std::string source = readFile("C:/Projects/O Compiler/test.ol");
@@ -25,6 +28,14 @@ int main() {
         TokenType resultType = checker.TypeCheck(root);
 
         std::cout << "TypeCheck succeeded. Result type: " << tokenTypeName(resultType) << "\n";
+
+        CodeGen codegen;
+
+        std::string assembly = codegen.generate(root); 
+
+        std::ofstream out("output.s");
+        out << assembly;
+        out.close();
 }
     catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

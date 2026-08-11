@@ -13,6 +13,8 @@ class SymbolTable  {
         TokenType lookup(const std::string& name) const;
 
         bool exists(const std::string& name) const;
+
+        void remove(const std::string& name);
 };
 
 class TypeChecker {

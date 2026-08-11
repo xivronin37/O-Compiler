@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include "lexer.h"
+#include "ast.h"
 #include "parser.h"
 
 
@@ -16,6 +17,7 @@ std::string tokenTypeName(TokenType type) {
         case TokenType::While: return "While";
         case TokenType::For: return "For";
         case TokenType::Return: return "Return";
+        case TokenType::Create: return "Create";
         case TokenType::Call: return "Call";
         case TokenType::Class: return "Class";
         case TokenType::Insert: return "Insert";
@@ -117,12 +119,19 @@ ASTNode* Parser::statement() {
         return ifStatement();
     }
 
+    if (peek().type == TokenType::While) {
+        return whileStatement();
+    }
+
     if (peek().type == TokenType::Identifier) {
         Token next = tokens[pos + 1];
         if (next.type == TokenType::Equal || next.type == TokenType::Tilde) {
             return assignStatement();
         }
+    }
 
+    if  (peek().type == TokenType::Create) {
+        return funcDecl();
     }
 
 
@@ -153,6 +162,40 @@ ASTNode* Parser::ifStatement() {
     
     return new IfNode{condition, thenBranch, elseBranch};
 }
+
+
+ASTNode* Parser::whileStatement() {
+    expect(TokenType::While);
+    ASTNode* condition = expression();
+    ASTNode* body = block();
+    
+    return new WhileNode{condition, body};
+}
+
+ASTNode* Parser::funcDecl() {
+    expect(TokenType::Create);
+    Token returnType = expectType();
+    Token name = expect(TokenType::Identifier);
+    std::vector<Param> parameters;
+    expect(TokenType::LParen);
+    while (peek().type != TokenType::RParen) {
+        Param tempParam;
+        tempParam.type = expectType();
+        expect(TokenType::Colon);
+        tempParam.name = expect(TokenType::Identifier);
+        parameters.push_back(tempParam);
+        if (peek().type != TokenType::RParen) {
+            expect(TokenType::Comma);
+        }       
+    }
+
+    expect(TokenType::RParen);
+
+    ASTNode* body = block();
+
+    return new FuncDeclNode{returnType, name, parameters, body};
+}
+
 
 ASTNode* Parser::assignStatement() {
     Token target = expect(TokenType::Identifier);
