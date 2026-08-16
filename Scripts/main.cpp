@@ -1,5 +1,6 @@
 #include <iostream>
 #include <fstream>
+#include <filesystem>
 #include "lexer.h"
 #include "ast.h"
 #include "parser.h"
@@ -8,7 +9,8 @@
 
 int main() {
     try {
-        std::string source = readFile("C:/Projects/O Compiler/test.ol");
+        std::filesystem::path filePath = "C:/Projects/O Compiler/a.ol";
+        std::string source = readFile(filePath.string());
         
         Lexer lexer(source);
         std::vector<Token> tokens = lexer.tokenize();
@@ -17,9 +19,11 @@ int main() {
             std::cout << "Type: " << tokenTypeName(token.type) << " Lexeme: " << token.value << std::endl;
         }
 
-        Parser parser(tokens);
+        Parser parser(tokens, filePath.parent_path());
 
         ASTNode* root = parser.parse();
+        
+        printAST(root);
         
         TypeChecker checker;
 
@@ -36,6 +40,7 @@ int main() {
         std::ofstream out("output.s");
         out << assembly;
         out.close();
+
 }
     catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;

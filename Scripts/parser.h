@@ -3,13 +3,21 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <filesystem>
 #include "lexer.h"
+
+struct typeBlockInfo {
+    TokenType kind;
+    std::vector<int> params;
+    Token elementType;
+};
 
 class Parser {
     public:
-        Parser(const std::vector<Token>& tokens);
+        Parser(const std::vector<Token>& tokens, std::filesystem::path currentDir);
         ASTNode* parse();
     private:
+        std::filesystem::path currentDir;
         std::vector<Token> tokens;
         size_t pos = 0;
 
@@ -21,14 +29,18 @@ class Parser {
         ASTNode* statement();
         ASTNode* varDecl();
         ASTNode* ifStatement();
+        ASTNode* whileStatement();
+        ASTNode* funcDecl();
         ASTNode* expression();
         ASTNode* comparison();
         ASTNode* term();
         ASTNode* factor();
         ASTNode* primary();
         ASTNode* block();
+        typeBlockInfo typeBlock();
         ASTNode* exprstatement();
         ASTNode* assignStatement();
+        ASTNode* outStatement();
 
 };
 

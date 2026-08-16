@@ -1,13 +1,17 @@
 .global main
 .def main; .scl 2; .type 32; .endef
 main:
-	subq $8, %rsp
+	pushq %rbp
 	movq %rsp, %rbp
-	movq $5, %rax
+	subq $16, %rsp
+	movq $10, %rax
+	movq %rax, -8(%rbp)
+	movq -8(%rbp), %rax
 	pushq %rax
-	movq $3, %rax
+	movq $5, %rax
 	movq %rax, %rbx
 	popq %rax
 	addq %rbx, %rax
-	movq %rax, -8(%rbp)
+	movq %rax, -16(%rbp)
+	leave
 	ret

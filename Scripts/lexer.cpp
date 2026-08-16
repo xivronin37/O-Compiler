@@ -1,5 +1,6 @@
 #include <vector>
 #include <string>
+#include <format>
 #include "lexer.h"
 
 char Lexer::peek() const {
@@ -28,6 +29,10 @@ void Lexer::skipWhitespace() {
 }
 
 Token Lexer::nextToken() {
+    if (pos >= source.size()) {
+        return {TokenType::EndOfFile, "EndOfFile", line, column};
+    }
+
     char c = peek();
     if (std::isalpha(c) || c == '_') {
         std::string identifier;
@@ -63,6 +68,23 @@ Token Lexer::nextToken() {
         return {TokenType::Int, number, line, column};
     }
 
+    if (c == '"') {
+        std::string StringLiteral = "";
+
+        advance(); // eat opening quote
+
+        while (peek() != '"' && peek() != '\0') {
+            StringLiteral += advance();
+
+            if (peek() == '\0') {
+                throw std::runtime_error(std::format("Unterminated string literal at line {}, column {}", line, column));
+            }
+        }
+
+        advance(); // eat closing quote
+
+        return {TokenType::String, StringLiteral, line, column};
+    }
     char op = advance();
     switch (op) {
         default: return {TokenType::Unknown, std::string(1, op), line, column};
@@ -81,6 +103,7 @@ Token Lexer::nextToken() {
         case('{'): return {TokenType::LBrace, "{", line, column};
         case('}'): return {TokenType::RBrace, "}", line, column};
         case('~'): return {TokenType::Tilde, "~", line, column};
+        case('#'): return {TokenType::Hash, "#", line, column};
         case('='): {
             if (peek() == '=') {
                 advance();

@@ -48,6 +48,11 @@ struct WhileNode : ASTNode {
         : condition(condition), body(body) {}
 };
 
+struct OutNode : ASTNode {
+    ASTNode* output;
+
+    OutNode(ASTNode* output) : output(output) {}
+};
 
 struct BinaryExprNode : ASTNode {
     ASTNode* left;
@@ -65,10 +70,49 @@ struct VarDeclNode : ASTNode {
     VarDeclNode(Token name, Token type, ASTNode* value) : name(name), type(type), value(value) {}
 };
 
+struct ArrayDeclNode : VarDeclNode {
+    Token name;
+    Token elementType;
+    int size;
+    std::vector<ASTNode*> elements;
+
+    ArrayDeclNode(Token name, Token elementType, int size, std::vector<ASTNode*> elements) : VarDeclNode(name, elementType, nullptr),
+    elementType(elementType), size(size), elements(elements) {}
+};
+
+struct IndexNode : ASTNode {
+    Token name;
+    ASTNode* index;
+
+    IndexNode(Token name, ASTNode* index) : name(name), index(index) {}
+};
+
 struct AssignNode : ASTNode {
     Token target;
     Token op;
     ASTNode* value;
 
     AssignNode(Token target, Token op, ASTNode* value) : target(target), op(op), value(value) {}
+};
+
+struct Param {
+    Token type;
+    Token name;
+};
+
+struct FuncDeclNode : ASTNode {
+    Token returnType;
+    Token name;
+    std::vector<Param> parameters;
+    ASTNode* body;
+
+    FuncDeclNode(Token returnType, Token name, std::vector<Param> parameters, ASTNode* body) : returnType(returnType), name(name), parameters(parameters), body(body) {}
+
+};
+
+struct CallNode : ASTNode {
+    Token name;
+    std::vector<ASTNode*> arguments;
+    
+    CallNode(Token name, std::vector<ASTNode*> arguments) : name(name), arguments(arguments) {}
 };

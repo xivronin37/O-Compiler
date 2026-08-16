@@ -9,6 +9,10 @@
 int countVarDecl(ASTNode* node) {
     int counter = 0;
 
+    if (auto arrDecl = dynamic_cast<ArrayDeclNode*>(node)) {
+        counter += arrDecl->elements.size();
+    }
+
     if (auto varDecl = dynamic_cast<VarDeclNode*>(node)) {
         counter++;
     }
@@ -24,6 +28,10 @@ int countVarDecl(ASTNode* node) {
         if (ifNode->elseBranch != nullptr) {
             counter += countVarDecl(ifNode->elseBranch);
         }
+    }
+
+    if (auto whileNode = dynamic_cast<WhileNode*>(node)) {
+        counter += countVarDecl(whileNode->body);
     }
 
     return counter;
@@ -121,6 +129,20 @@ void CodeGen::genNode(ASTNode* node) {
         }
     }
 
+    if (auto arrDecl = dynamic_cast<ArrayDeclNode*>(node)) {
+        std::string name = arrDecl->name.value;
+        int baseOffset = currentOffset - 8;
+
+        for (size_t i = 0; i < arrDecl->elements.size(); i++) {
+            genNode(arrDecl->elements[i]);
+            currentOffset -= 8;
+
+            emit(std::format("movq %rax, {}(%rbp)", currentOffset));
+        }
+
+        symbolTable[name] = baseOffset;
+    }
+
     if (auto varDecl = dynamic_cast<VarDeclNode*>(node)) {
         genNode(varDecl->value);
         std::string name = varDecl->name.value;
@@ -204,6 +226,88 @@ void CodeGen::genNode(ASTNode* node) {
         emit(endLabel + ":", false);
     }
 
+    if (auto funcDecl = dynamic_cast<FuncDeclNode*>(node)) {
+        emit(std::format("jmp .L_skip_{}", funcDecl->name.value));
+        emit(funcDecl->name.value + ":", false);
+        emit("pushq %rbp");
+        emit("movq %rsp, %rbp");
+
+        int allocatedBytes = (countVarDecl(funcDecl->body) + funcDecl->parameters.size()) * 8;
+
+        emit(std::format("subq ${}, %rsp", allocatedBytes));
+
+        for (int i = 1; i <= funcDecl->parameters.size(); i++) {
+            funcOffset-=8;
+            symbolTable[funcDecl->parameters[i-1].name.value] = funcOffset;
+            switch(i) {
+                default: {
+                    throw std::runtime_error("Cannot have more than four parameters: " + funcDecl->name.value);
+                }
+                case 1: {
+                    emit(std::format("movq %rcx, {}(%rbp)", funcOffset));
+                    break;
+                }
+                case 2: {
+                    emit(std::format("movq %rdx, {}(%rbp)", funcOffset));
+                    break;
+                }
+                case 3: {
+                    emit(std::format("movq %r8, {}(%rbp)", funcOffset));
+                    break;
+                }
+                case 4: {
+                    emit(std::format("movq %r9, {}(%rbp)", funcOffset));
+                    break;
+                }
+                }
+            }
+
+
+        genNode(funcDecl->body);
+
+        funcOffset = 0;
+
+        emit("leave");
+        emit("ret");
+        emit(std::format(".L_skip_{}:", funcDecl->name.value), false);
+    }
+
+    if (auto callNode = dynamic_cast<CallNode*>(node)) {
+        for (int i = 0; i < callNode->arguments.size(); i++) {
+            genNode(callNode->arguments[i]);
+            switch(i + 1) {
+                default:
+                    throw std::runtime_error("Cannot have more than six arguments: " + callNode->name.value);
+                case 1: {
+                    emit("movq %rax, %rcx");
+                    break;
+                }
+                case 2: {
+                    emit("movq %rax, %rdx");
+                    break;
+                }
+                case 3: {
+                    emit("movq %rax, %r8");
+                    break;
+                }
+                case 4: {
+                    emit("movq %rax, %r9");
+                    break;
+                }
+            }
+        }
+        
+        emit("subq $32, %rsp");
+        emit(std::format("call {}", callNode->name.value));
+        emit("addq $32, %rsp");
+    }
+
+    if (auto outNode = dynamic_cast<OutNode*>(node)) {
+        genNode(outNode->output);
+
+        emit("leave");
+        emit("ret");
+    }
 }
 
 std::string CodeGen::generate(ASTNode* root) {
@@ -217,7 +321,6 @@ std::string CodeGen::generate(ASTNode* root) {
     emit(std::format("subq ${}, %rsp", counter));
     genNode(root);
     emit("leave");
-    emit("popq %rbp");
     emit("ret");
 
     return output;

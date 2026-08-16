@@ -10,14 +10,15 @@
 enum class TokenType {
     Identifier,
     Keyword,
-    Let, If, Else, While, For, Return, Call, Create, Class, Insert, From, As, Inline, Request, Send, Decouple,
+    Let, If, Else, While, Out, Call, Create, Class, Insert, From, As, Inline, Request, Send, Decouple,
     Number,
     String,
     Plus, Minus, Star, FSlash, BSlash, Colon, Semicolon, Comma, LBracket, RBracket, LParen, RParen, LBrace, RBrace, Tilde,
     Equal, EqualEqual, NotEqual, LessThan, GreaterThan, LessThanOrEqual, GreaterThanOrEqual,
     L_AND, L_OR, L_NOT, L_XOR, B_AND, B_OR, B_NOT, B_XOR,
     Punctuation,
-    Int, Bool, Float, Null, UnsignedInt, UnsignedFloat,
+    Array,
+    Int, Bool, Float, Null, UnsignedInt, UnsignedFloat, Sentinel,
     Unknown,
     EndOfFile
 };
@@ -27,8 +28,7 @@ inline const std::unordered_map<std::string, TokenType> keywords = {
     {"if", TokenType::If},
     {"else", TokenType::Else},
     {"while", TokenType::While},
-    {"for", TokenType::For},
-    {"return", TokenType::Return},
+    {"out", TokenType::Out},
     {"call", TokenType::Call},
     {"create", TokenType::Create},
     {"class", TokenType::Class},
@@ -47,7 +47,9 @@ inline const std::unordered_map<std::string, TokenType> types = {
     {"f", TokenType::Float},
     {"n", TokenType::Null},
     {"ui", TokenType::UnsignedInt},
-    {"uf", TokenType::UnsignedFloat}
+    {"uf", TokenType::UnsignedFloat},
+    {"arr", TokenType::Array},
+    {"str", TokenType::String}
 };
 
 

@@ -5,20 +5,42 @@
 
 
 void SymbolTable::declare(const std::string& name, TokenType& type) {
+    if (isDeclared(name)) {
+        throw std::runtime_error("TC | '" + name + "' is already declared");
+    }
+
     table[name] = type;
 }
 
-TokenType SymbolTable::lookup(const std::string& name) const {
-    auto it = table.find(name);
-    if (it == table.end()) {
-        throw std::runtime_error("Variable " + name + " not declared.");
-    }
-
-    return it->second;
+bool SymbolTable::isDeclared(const std::string& name) const {
+    return exists(name) || arrayExists(name);
 }
+
+TokenType SymbolTable::lookup(const std::string& name) const {
+    auto t_it = table.find(name);
+    if (t_it != table.end()) return t_it->second;
+
+    auto a_it = arrays.find(name);
+    if (a_it != arrays.end()) return a_it->second;
+
+    throw std::runtime_error("TC | '" + name + "' is not declared");
+}
+
 
 bool SymbolTable::exists(const std::string& name) const {
     return table.find(name) != table.end();
+}
+
+bool SymbolTable::arrayExists(const std::string& name) const {
+    return arrays.find(name) != arrays.end();
+}
+
+void SymbolTable::arrayDeclare(const std::string& name, TokenType& elementType) {
+    if (isDeclared(name)) {
+        throw std::runtime_error("TC | '" + name + "' is already declared");
+    }
+
+    arrays[name] = elementType;
 }
 
 void SymbolTable::remove(const std::string& name) {
@@ -39,7 +61,7 @@ TokenType TypeChecker::TypeCheck(ASTNode* node) {
         TokenType rightType = TypeCheck(bin->right);
 
         if (leftType != rightType) {
-            throw std::runtime_error("Type mismatch in binary expression: '" + tokenTypeName(leftType) + "' -> '" + tokenTypeName(rightType) + "'");
+            throw std::runtime_error("TC | Type mismatch in binary expression: '" + tokenTypeName(leftType) + "' -> '" + tokenTypeName(rightType) + "'");
         }
         
         switch(bin->op.type) {
@@ -55,12 +77,45 @@ TokenType TypeChecker::TypeCheck(ASTNode* node) {
         }
     }
 
+    if (auto arr = dynamic_cast<ArrayDeclNode*>(node)) {
+        TokenType declaredType = arr->elementType.type;
+        int counter = 0;
+        for (auto element : arr->elements) {
+            TokenType elementValue = TypeCheck(element);
+            if (elementValue != declaredType) {
+                throw std::runtime_error("TC | Type mismatch in array declaration at index " + std::to_string(counter) + ", expected: " + tokenTypeName(arr->elementType.type) + " Got: " + tokenTypeName(elementValue));
+            }
+            counter++;
+        }
+
+        if (arr->elements.size() != arr->size) {
+            throw std::runtime_error("TC | Array '" + arr->name.value + "' declared size " 
+                + std::to_string(arr->size) + " but got " + std::to_string(arr->elements.size()) + " elements");
+        }
+
+        symbols.arrayDeclare(arr->name.value, declaredType);
+
+        return declaredType;
+    }
+
+    if (auto idx = dynamic_cast<IndexNode*>(node)) {
+        if (TokenType::Int != TypeCheck(idx->index)) {
+            throw std::runtime_error("Non-integer index for identifier '" + idx->name.value + "'");
+        }
+
+        if (!(symbols.arrayExists(idx->name.value))) {
+            throw std::runtime_error("'" + idx->name.value + "' is not an array");
+        } 
+
+        return symbols.lookup(idx->name.value);
+    }
+
     if (auto varDecl = dynamic_cast<VarDeclNode*>(node)) {
         TokenType value = TypeCheck(varDecl->value);
         TokenType declaredType = varDecl->type.type;
 
         if (value != declaredType) {
-            throw std::runtime_error("Type mismatch in variable declaration for '" + varDecl->name.value + "'");
+            throw std::runtime_error("TC | Type mismatch in variable declaration for '" + varDecl->name.value + "'");
         }
 
         symbols.declare(varDecl->name.value, declaredType);
@@ -80,7 +135,7 @@ TokenType TypeChecker::TypeCheck(ASTNode* node) {
         TokenType condition = TypeCheck(ifNode->condition);
 
         if (condition != TokenType::Bool) {
-            throw std::runtime_error("If condition must be Bool");
+            throw std::runtime_error("TC | If condition must be Bool");
         }
         TypeCheck(ifNode->thenBranch);
 
@@ -95,7 +150,7 @@ TokenType TypeChecker::TypeCheck(ASTNode* node) {
         TokenType condition = TypeCheck(whileNode->condition);
 
         if (condition != TokenType::Bool) {
-            throw std::runtime_error("If condition must be Bool");
+            throw std::runtime_error("TC | If condition must be Bool");
         }
 
         TypeCheck(whileNode->body);
@@ -108,7 +163,7 @@ TokenType TypeChecker::TypeCheck(ASTNode* node) {
         TokenType value = TypeCheck(assignNode->value);
 
         if (targetType != value) {
-            throw std::runtime_error("Cannot assign due to type mismatch: '" + assignNode->target.value + "'");
+            throw std::runtime_error("TC | Cannot assign due to type mismatch: '" + assignNode->target.value + "'");
         }
 
         return targetType;
@@ -127,7 +182,11 @@ TokenType TypeChecker::TypeCheck(ASTNode* node) {
             symbols.declare(param.name.value, param.type.type);
         }
 
+        returnType = current.type;
+
         TypeCheck(funcDecl->body);
+
+        returnType = TokenType::Sentinel;
 
         for (auto param : funcDecl->parameters) {
             symbols.remove(param.name.value);
@@ -140,25 +199,35 @@ TokenType TypeChecker::TypeCheck(ASTNode* node) {
     if (auto callNode = dynamic_cast<CallNode*>(node)) {
         auto it = functions.find(callNode->name.value);
         if (it == functions.end()) {
-            throw std::runtime_error("Undefined function:" + callNode->name.value);
+            throw std::runtime_error("TC | Undefined function:" + callNode->name.value);
         }
 
         FuncType typeStruct = it->second;
 
         if (callNode->arguments.size() != typeStruct.paramTypes.size()) {
-            throw std::runtime_error("Expected " + std::to_string(typeStruct.paramTypes.size()) + " arguments, got " + std::to_string(callNode->arguments.size()));
+            throw std::runtime_error("TC | Expected " + std::to_string(typeStruct.paramTypes.size()) + " arguments, got " + std::to_string(callNode->arguments.size()));
         }
 
         int index = 0;
         for (auto argument : callNode->arguments) {
             TokenType type = TypeCheck(argument);
             if (type != typeStruct.paramTypes[index]) {
-                throw std::runtime_error("Expected type: " + tokenTypeName(typeStruct.paramTypes[index]) + "Got: " + tokenTypeName(type));
+                throw std::runtime_error("TC | Expected type: " + tokenTypeName(typeStruct.paramTypes[index]) + "Got: " + tokenTypeName(type));
             }
             index++;
         }
         return typeStruct.type;
     }
-    // Add more cases for other node types
-    throw std::runtime_error("Unhandled node type");
+    
+    if (auto outNode = dynamic_cast<OutNode*>(node)) {
+        TokenType outType = TypeCheck(outNode->output);
+
+        if (outType == returnType) {
+            return outType;
+        } else {
+            throw std::runtime_error("TC | Expected: " + tokenTypeName(returnType) + " Got: " + tokenTypeName(outType));
+        }
+    }
+
+    throw std::runtime_error("TC | Unhandled node type");
 }

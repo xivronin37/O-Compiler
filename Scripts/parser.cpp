@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <filesystem>
 #include "lexer.h"
 #include "ast.h"
 #include "parser.h"
@@ -15,8 +16,7 @@ std::string tokenTypeName(TokenType type) {
         case TokenType::If: return "If";
         case TokenType::Else: return "Else";
         case TokenType::While: return "While";
-        case TokenType::For: return "For";
-        case TokenType::Return: return "Return";
+        case TokenType::Out: return "Out";
         case TokenType::Create: return "Create";
         case TokenType::Call: return "Call";
         case TokenType::Class: return "Class";
@@ -58,6 +58,8 @@ std::string tokenTypeName(TokenType type) {
         case TokenType::Int: return "Int";
         case TokenType::Bool: return "Bool";
         case TokenType::Float: return "Float";
+        case TokenType::Array: return "Array";
+        case TokenType::Hash: return "Hash";
         case TokenType::Null: return "Null";
         case TokenType::UnsignedInt: return "UnsignedInt";
         case TokenType::UnsignedFloat: return "UnsignedFloat";
@@ -130,10 +132,13 @@ ASTNode* Parser::statement() {
         }
     }
 
-    if  (peek().type == TokenType::Create) {
+    if (peek().type == TokenType::Create) {
         return funcDecl();
     }
 
+    if (peek().type == TokenType::Out) {
+        return outStatement();
+    }
 
     return exprstatement();
 }
@@ -142,11 +147,60 @@ ASTNode* Parser::varDecl() {
     expect(TokenType::Let);
     Token name = expect(TokenType::Identifier);
     expect(TokenType::Colon);
+    if (peek().type == TokenType::LBrace) {
+        std::vector<ASTNode*> elements;
+        typeBlockInfo newInfo = typeBlock();
+        expect(TokenType::Comma);
+        expect(TokenType::BSlash);
+
+        while (peek().type != TokenType::BSlash) {
+            if (peek().type == newInfo.elementType.type) {
+                elements.push_back(expression());
+            } else {
+                throw std::runtime_error("Expected type: " + tokenTypeName(newInfo.elementType.type) + "Got: " +tokenTypeName(peek().type));
+            }
+            if (peek().type == TokenType::Comma) advance();
+        }
+
+        expect(TokenType::BSlash);
+        expect(TokenType::Semicolon);
+
+        return new ArrayDeclNode{name, newInfo.elementType, newInfo.params[0], elements};
+    }
+
     Token type = expectType();
     expect(TokenType::Comma);
     ASTNode* value = expression(); 
     expect(TokenType::Semicolon);
     return new VarDeclNode{name, type, value};
+}
+
+typeBlockInfo Parser::typeBlock() {
+    typeBlockInfo info;
+    int size = 0;
+    Token foundType;
+    expect(TokenType::LBrace);
+    expect(TokenType::Array);
+    expect(TokenType::LParen);
+    size = std::stoi(expect(TokenType::Int).value);
+    expect(TokenType::RParen);
+    
+    expect(TokenType::Comma);
+
+    if (peek().type == TokenType::Int || peek().type == TokenType::Float || peek().type == TokenType::UnsignedInt
+    || peek().type == TokenType::UnsignedFloat) {
+        foundType = advance();
+    } else {
+        throw std::runtime_error("Expected valid type, got: " + peek().value);
+    }
+
+    expect(TokenType::RBrace);
+
+    info.kind = TokenType::Array;
+    info.elementType = foundType;
+    info.params.push_back(size);
+
+    return info;
 }
 
 ASTNode* Parser::ifStatement() {
@@ -196,6 +250,13 @@ ASTNode* Parser::funcDecl() {
     return new FuncDeclNode{returnType, name, parameters, body};
 }
 
+ASTNode* Parser::outStatement() {
+    expect(TokenType::Out);
+    ASTNode* output = expression();
+    expect(TokenType::Semicolon);
+
+    return new OutNode{output};
+}
 
 ASTNode* Parser::assignStatement() {
     Token target = expect(TokenType::Identifier);
@@ -274,7 +335,40 @@ ASTNode* Parser::primary() {
             return new CollectionNode(id.value, elements);
         }
 
+        if (peek().type == TokenType::Hash) {
+            bool isGrouped = false;
+            advance();
+            if (peek().type == TokenType::LParen) {
+                advance();
+                isGrouped = true;
+            }
+
+            ASTNode* index = expression();
+
+            if (isGrouped) expect(TokenType::RParen);
+        }
+
         return new IdentifierNode(id.value);
+    }
+
+    if (peek().type == TokenType::Call) {
+        expect(TokenType::Call);
+        Token name = expect(TokenType::Identifier);
+        expect(TokenType::LParen);
+
+        std::vector<ASTNode*> arguments;
+
+        while (peek().type != TokenType::RParen) {
+            ASTNode* argument = expression();
+            arguments.push_back(argument);
+            if (peek().type != TokenType::RParen) {
+                expect(TokenType::Comma);
+            }    
+        }
+
+        expect(TokenType::RParen);
+
+        return new CallNode{name, arguments};
     }
 
     throw std::runtime_error("Expected expression at line " + std::to_string(peek().line));
@@ -293,10 +387,34 @@ ASTNode* Parser::block() {
     return new BlockNode(statements);
 }
 
-Parser::Parser(const std::vector<Token>& tokens) : tokens(tokens) {}
+Parser::Parser(const std::vector<Token>& tokens, std::filesystem::path currentDir) : tokens(tokens), currentDir(currentDir) {}
 
 ASTNode* Parser::parse() {
     std::vector<ASTNode*> statements;
+    while (peek().type == TokenType::Insert) {
+        expect(TokenType::Insert);
+        Token StringLiteral = expect(TokenType::String);
+        expect(TokenType::Semicolon);
+
+        std::filesystem::path insertedPath = currentDir / StringLiteral.value;
+        std::string insertSource = readFile(insertedPath.string()); // we read the inserted file
+
+        Lexer lexer(insertSource);
+        std::vector<Token> tokens = lexer.tokenize();
+
+        for (auto token : tokens) {
+            std::cout << "[insert] Type: " << tokenTypeName(token.type) << " Lexeme: " << token.value << std::endl;
+        }
+
+        Parser parser(tokens, insertedPath.parent_path());
+
+        ASTNode* insertedFile = parser.parse(); // recursively parse: if insertedFile also has an insert, it will return to this code block
+
+        for (auto statement : dynamic_cast<BlockNode*>(insertedFile)->statements) {
+            statements.push_back(statement);
+        }
+
+    }
     while (peek().type != TokenType::EndOfFile) {
         statements.push_back(statement());
     }
@@ -307,7 +425,14 @@ ASTNode* Parser::parse() {
 void printAST(ASTNode* node, int depth) {
     std::string indent(depth * 2, ' ');
 
-    if (auto v = dynamic_cast<VarDeclNode*>(node)) {
+    if (auto arr = dynamic_cast<ArrayDeclNode*>(node)) {
+        std::cout << indent << "Array: " << arr->elementType.value << ", size " << arr->size << "\n";
+        for (auto element : arr->elements) {
+            printAST(element, depth + 1);
+        }
+    }
+
+    else if (auto v = dynamic_cast<VarDeclNode*>(node)) {
         std::cout << indent << "VarDecl: " << v->name.value << " : " << v->type.value << "\n";
         printAST(v->value, depth + 1);
     }
@@ -316,18 +441,22 @@ void printAST(ASTNode* node, int depth) {
         printAST(b->left, depth + 1);
         printAST(b->right, depth + 1);
     }
+
     else if (auto n = dynamic_cast<NumberLiteralNode*>(node)) {
         std::cout << indent << "Number: " << n->value << "\n";
     }
+
     else if (auto i = dynamic_cast<IdentifierNode*>(node)) {
         std::cout << indent << "Identifier: " << i->value << "\n";
     }
+
     else if (auto blk = dynamic_cast<BlockNode*>(node)) {
         std::cout << indent << "Block:\n";
         for (auto stmt : blk->statements) {
             printAST(stmt, depth + 1);
         }
     }
+
     else if (auto ifNode = dynamic_cast<IfNode*>(node)) {
         std::cout << indent << "If:\n";
         std::cout << indent << "  Condition:\n";
@@ -339,6 +468,7 @@ void printAST(ASTNode* node, int depth) {
             printAST(ifNode->elseBranch, depth + 2);
         }
     }
+
     else {
         std::cout << indent << "Unknown node\n";
     }

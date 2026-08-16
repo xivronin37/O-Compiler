@@ -10,6 +10,7 @@ class CodeGen {
         std::string output;
         std::unordered_map<std::string, int> symbolTable;
         int currentOffset = 0;
+        int funcOffset = 0;
         int ifCounter = 0;
         int whileCounter = 0;
 
