@@ -3,15 +3,15 @@
 main:
 	pushq %rbp
 	movq %rsp, %rbp
-	subq $16, %rsp
-	movq $10, %rax
+	subq $40, %rsp
+	movq $1, %rax
 	movq %rax, -8(%rbp)
-	movq -8(%rbp), %rax
-	pushq %rax
-	movq $5, %rax
-	movq %rax, %rbx
-	popq %rax
-	addq %rbx, %rax
+	movq $2, %rax
 	movq %rax, -16(%rbp)
+	movq $3, %rax
+	movq %rax, -24(%rbp)
+	movq $0, %rax
+	movq -8(%rbp, %rax, 8), %rax
+	movq %rax, -32(%rbp)
 	leave
 	ret

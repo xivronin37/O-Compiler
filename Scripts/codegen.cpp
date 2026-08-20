@@ -11,6 +11,7 @@ int countVarDecl(ASTNode* node) {
 
     if (auto arrDecl = dynamic_cast<ArrayDeclNode*>(node)) {
         counter += arrDecl->elements.size();
+        counter++;
     }
 
     if (auto varDecl = dynamic_cast<VarDeclNode*>(node)) {
@@ -131,6 +132,10 @@ void CodeGen::genNode(ASTNode* node) {
 
     if (auto arrDecl = dynamic_cast<ArrayDeclNode*>(node)) {
         std::string name = arrDecl->name.value;
+
+        currentOffset -= 8;
+        emit(std::format("movq ${}, {}(%rbp)", arrDecl->elements.size(), currentOffset));
+
         int baseOffset = currentOffset - 8;
 
         for (size_t i = 0; i < arrDecl->elements.size(); i++) {
@@ -142,16 +147,64 @@ void CodeGen::genNode(ASTNode* node) {
 
         symbolTable[name] = baseOffset;
     }
-
-    if (auto varDecl = dynamic_cast<VarDeclNode*>(node)) {
-        genNode(varDecl->value);
+    
+    else if (auto varDecl = dynamic_cast<VarDeclNode*>(node)) {
         std::string name = varDecl->name.value;
 
+        if (auto inst = dynamic_cast<InstanceNode*>(varDecl->value)) {
+            int baseOffset = currentOffset - 8;
 
-        currentOffset -= 8;
-        symbolTable[name] = currentOffset;
+            for (size_t i = 0; i < arrDecl->elements.size(); i++) {
+                genNode(inst->arguments[i]);
 
-        emit(std::format("movq %rax, {}(%rbp)", currentOffset));
+                currentOffset -= 8;
+                emit(std::format("movq %rax, {}(%rbp)", currentOffset));
+            }
+
+            symbolTable[name] = baseOffset;
+        }
+        else {
+            genNode(varDecl->value);
+            currentOffset -= 8;
+            symbolTable[name] = currentOffset;
+            emit(std::format("movq %rax, {}(%rbp)", currentOffset));
+        }
+    }
+    
+    if (auto idx = dynamic_cast<IndexNode*>(node)) {
+    genNode(idx->index);
+    int baseOffset = symbolTable[idx->name.value];
+    emit(std::format("movq {}(%rbp, %rax, 8), %rax", baseOffset));
+    }
+
+    if (auto field = dynamic_cast<FieldAccessNode*>(node)) {
+        auto target = dynamic_cast<IdentifierNode*>(field->target);
+
+        if (!target) {
+            throw std::runtime_error("CG: E36-1 | No identifier found for field access");
+        }
+
+        int baseOffset = symbolTable[target->value];
+        std::vector<Param> fields = typeCheck.structTable[typeCheck.instances[target->value]];
+
+        bool found = false;
+        int count = -1;
+
+        for (auto& checkedField : fields) {
+            count++;
+            if (checkedField.name.value == field->field.value) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            throw std::runtime_error("CG: E35-1 | Undefined field: " + target->value);
+        }
+
+        int finalOffset = baseOffset - count*8;
+
+        emit(std::format("movq {}(%rbp), %rax", finalOffset));
     }
 
     if (auto id = dynamic_cast<IdentifierNode*>(node)) {
@@ -167,17 +220,62 @@ void CodeGen::genNode(ASTNode* node) {
     }
 
     if (auto assign = dynamic_cast<AssignNode*>(node)) {
-        genNode(assign->value);
+        if (auto id = dynamic_cast<IdentifierNode*>(assign->target)) {
+            genNode(assign->value);
+            auto it = symbolTable.find(id->value);
 
-        auto it = symbolTable.find(assign->target.value);
+            if (it == symbolTable.end()) {
+                throw std::runtime_error("CG: E37 | Cannot assign to an undefined variable: " + id->value);
+            }
 
-        if (it == symbolTable.end()) {
-            throw std::runtime_error("Cannot assign to an undefined variable: " + assign->target.value);
+            emit(std::format("movq %rax, {}(%rbp)", it->second));
         }
 
-        int offset = it->second;
+        else if (auto field = dynamic_cast<FieldAccessNode*>(assign->target)) {
+            genNode(assign->value);
 
-        emit(std::format("movq %rax, {}(%rbp)", offset));
+            auto target = dynamic_cast<IdentifierNode*>(field->target);
+
+            if (!target) {
+                throw std::runtime_error("CG: E36-2 | No identifier found for field access");
+            }
+
+            int baseOffset = symbolTable[target->value];
+            std::vector<Param> fields = typeCheck.structTable[typeCheck.instances[target->value]];
+
+            bool found = false;
+            int count = -1;
+
+            for (auto& checkedField : fields) {
+                count++;
+                if (checkedField.name.value == field->field.value) {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                throw std::runtime_error("CG: E35-2 | Undefined field: " + target->value);
+            }
+
+            int finalOffset = baseOffset - count*8;
+
+            emit(std::format("movq {}(%rbp), %rax", finalOffset));
+        }
+
+        else if (auto idx = dynamic_cast<IndexNode*>(assign->target)) {
+            genNode(assign->value);
+            emit("pushq %rax");
+
+            genNode(idx->index);
+            emit("movq %rax, %rbx");
+
+            emit("popq %rax");
+
+            int baseOffset = symbolTable[idx->name.value];
+            emit(std::format("movq %rax, {}(%rbp,%rbx,8)", baseOffset));
+        }
+
     }
 
     if (auto ifNode = dynamic_cast<IfNode*>(node)) {

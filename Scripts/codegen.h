@@ -7,6 +7,7 @@
 
 class CodeGen {
     private:
+        TypeChecker typeCheck;
         std::string output;
         std::unordered_map<std::string, int> symbolTable;
         int currentOffset = 0;

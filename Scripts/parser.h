@@ -31,6 +31,7 @@ class Parser {
         ASTNode* ifStatement();
         ASTNode* whileStatement();
         ASTNode* funcDecl();
+        ASTNode* classDecl();
         ASTNode* expression();
         ASTNode* comparison();
         ASTNode* term();
@@ -39,8 +40,10 @@ class Parser {
         ASTNode* block();
         typeBlockInfo typeBlock();
         ASTNode* exprstatement();
-        ASTNode* assignStatement();
+        ASTNode* assignStatement(ASTNode* target);
         ASTNode* outStatement();
+        ASTNode* pushStatement();
+        ASTNode* removeStatement();
 
 };
 

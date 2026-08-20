@@ -21,8 +21,6 @@ class SymbolTable  {
 
         bool arrayExists(const std::string& name) const;
 
-        bool onlyArray(const std::string& name) const;
-
         void remove(const std::string& name);
 };
 
@@ -31,14 +29,24 @@ struct FuncType {
     std::vector<TokenType> paramTypes;
 };
 
+
 inline std::unordered_map<std::string, FuncType> functions;
 
 class TypeChecker {
     private:
-        SymbolTable symbols;
 
         TokenType returnType = TokenType::Sentinel;
+        
+        std::string lastStructName;
+
+        bool nameTaken(const std::string& name);
     public:
+        SymbolTable symbols;
+        
+        std::unordered_map<std::string, std::vector<Param>> structTable;
+
+        std::unordered_map<std::string, std::string> instances;
+        
         TypeChecker() = default;
         TokenType TypeCheck(ASTNode* node);
 };

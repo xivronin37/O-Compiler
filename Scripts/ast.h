@@ -10,6 +10,11 @@ struct ASTNode {
     virtual ~ASTNode() = default;
 };
 
+struct Param {
+    Token type;
+    Token name;
+};
+
 struct IdentifierNode : ASTNode {
     std::string value;
     IdentifierNode(const std::string& value) : value(value) {}
@@ -71,13 +76,34 @@ struct VarDeclNode : ASTNode {
 };
 
 struct ArrayDeclNode : VarDeclNode {
-    Token name;
     Token elementType;
     int size;
     std::vector<ASTNode*> elements;
 
     ArrayDeclNode(Token name, Token elementType, int size, std::vector<ASTNode*> elements) : VarDeclNode(name, elementType, nullptr),
     elementType(elementType), size(size), elements(elements) {}
+};
+
+struct StructDeclNode : ASTNode {
+    Token name;
+    std::vector<Param> fields;
+
+    StructDeclNode(Token name, std::vector<Param> fields) : name(name), fields(fields) {}
+};
+
+struct InstanceNode : ASTNode {
+    Token structName;
+    std::vector<ASTNode*> arguments;
+
+    InstanceNode(Token structName, std::vector<ASTNode*> arguments) : structName(structName), arguments(arguments) {}
+};
+
+struct FieldAccessNode : ASTNode {
+    ASTNode target;
+    Token field;
+
+    FieldAccessNode(ASTNode target, Token field) : target(target), field(field){}
+
 };
 
 struct IndexNode : ASTNode {
@@ -95,10 +121,6 @@ struct AssignNode : ASTNode {
     AssignNode(Token target, Token op, ASTNode* value) : target(target), op(op), value(value) {}
 };
 
-struct Param {
-    Token type;
-    Token name;
-};
 
 struct FuncDeclNode : ASTNode {
     Token returnType;

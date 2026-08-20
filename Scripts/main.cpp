@@ -26,8 +26,6 @@ int main() {
         printAST(root);
         
         TypeChecker checker;
-
-        checker.TypeCheck(root);
         
         TokenType resultType = checker.TypeCheck(root);
 

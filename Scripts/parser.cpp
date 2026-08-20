@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <format>
 #include <filesystem>
 #include "lexer.h"
 #include "ast.h"
@@ -19,11 +20,14 @@ std::string tokenTypeName(TokenType type) {
         case TokenType::Out: return "Out";
         case TokenType::Create: return "Create";
         case TokenType::Call: return "Call";
+        case TokenType::Open: return "Open";
         case TokenType::Class: return "Class";
         case TokenType::Insert: return "Insert";
         case TokenType::From: return "From";
         case TokenType::As: return "As";
         case TokenType::Inline: return "Inline";
+        case TokenType::Push: return "Push";
+        case TokenType::Remove: return "Remove";
         case TokenType::Request: return "Request";
         case TokenType::Send: return "Send";
         case TokenType::Decouple: return "Decouple";
@@ -60,6 +64,7 @@ std::string tokenTypeName(TokenType type) {
         case TokenType::Float: return "Float";
         case TokenType::Array: return "Array";
         case TokenType::Hash: return "Hash";
+        case TokenType::Question: return "Question";
         case TokenType::Null: return "Null";
         case TokenType::UnsignedInt: return "UnsignedInt";
         case TokenType::UnsignedFloat: return "UnsignedFloat";
@@ -90,16 +95,18 @@ Token Parser::expect(TokenType type) {
     }
     
     // Handle error: unexpected token type
-    throw std::runtime_error("Unexpected token type " + tokenTypeName(token.type) + " at line " + std::to_string(token.line) + ", column " + std::to_string(token.column)); 
+    throw std::runtime_error("P: E31 | Unexpected token type " + tokenTypeName(token.type) + " at line " + std::to_string(token.line) + ", column " + std::to_string(token.column)); 
     return {TokenType::EndOfFile, "", 0, 0};
 }
 
 Token Parser::expectType() {
     TokenType t = peek().type;
-    if (t == TokenType::Int || t == TokenType::Bool || t == TokenType::Float || t == TokenType::Null || t == TokenType::UnsignedInt || t == TokenType::UnsignedFloat) {
+    if (t == TokenType::Int || t == TokenType::Bool || t == TokenType::Float || t == TokenType::Null
+        || t == TokenType::UnsignedInt || t == TokenType::UnsignedFloat || t == TokenType::Identifier) {
         return advance();
     }
-    throw std::runtime_error("Expected type token at line " + std::to_string(peek().line) + ", column " + std::to_string(peek().column));
+
+    throw std::runtime_error("P: E30 | Expected type token at line " + std::to_string(peek().line) + ", column " + std::to_string(peek().column));
     return {TokenType::EndOfFile, "", 0, 0};
 }
 
@@ -126,8 +133,9 @@ ASTNode* Parser::statement() {
     }
 
     if (peek().type == TokenType::Identifier) {
-        Token next = tokens[pos + 1];
-        if (next.type == TokenType::Equal || next.type == TokenType::Tilde) {
+        size_t savedPos = pos;
+        ASTNode* target = primary();
+        if (peek().type == TokenType::Equal || peek().type == TokenType::Tilde) {
             return assignStatement();
         }
     }
@@ -135,6 +143,9 @@ ASTNode* Parser::statement() {
     if (peek().type == TokenType::Create) {
         return funcDecl();
     }
+
+    if (peek().type == TokenType::Push) return pushStatement();
+    if (peek().type == TokenType::Remove) return removeStatement();
 
     if (peek().type == TokenType::Out) {
         return outStatement();
@@ -157,7 +168,7 @@ ASTNode* Parser::varDecl() {
             if (peek().type == newInfo.elementType.type) {
                 elements.push_back(expression());
             } else {
-                throw std::runtime_error("Expected type: " + tokenTypeName(newInfo.elementType.type) + "Got: " +tokenTypeName(peek().type));
+                throw std::runtime_error("P: E29 | Expected type: " + tokenTypeName(newInfo.elementType.type) + "Got: " +tokenTypeName(peek().type));
             }
             if (peek().type == TokenType::Comma) advance();
         }
@@ -191,7 +202,7 @@ typeBlockInfo Parser::typeBlock() {
     || peek().type == TokenType::UnsignedFloat) {
         foundType = advance();
     } else {
-        throw std::runtime_error("Expected valid type, got: " + peek().value);
+        throw std::runtime_error("P: E28 | Expected valid type, got: " + peek().value);
     }
 
     expect(TokenType::RBrace);
@@ -217,7 +228,6 @@ ASTNode* Parser::ifStatement() {
     return new IfNode{condition, thenBranch, elseBranch};
 }
 
-
 ASTNode* Parser::whileStatement() {
     expect(TokenType::While);
     ASTNode* condition = expression();
@@ -232,6 +242,7 @@ ASTNode* Parser::funcDecl() {
     Token name = expect(TokenType::Identifier);
     std::vector<Param> parameters;
     expect(TokenType::LParen);
+
     while (peek().type != TokenType::RParen) {
         Param tempParam;
         tempParam.type = expectType();
@@ -250,6 +261,40 @@ ASTNode* Parser::funcDecl() {
     return new FuncDeclNode{returnType, name, parameters, body};
 }
 
+ASTNode* Parser::classDecl() {
+    bool isOpen = false;
+
+    if (peek().type == TokenType::Open) {
+        advance();
+        isOpen = true;
+    }
+
+    expect(TokenType::Class);
+
+    if (!isOpen) {
+        throw std::runtime_error("P: E-minus(1) | Closed class not implemented yet");
+    }
+
+    Token name = expect(TokenType::Identifier);
+
+    expect(TokenType::LBracket);
+
+    std::vector<Param> fields;
+
+    while (peek().type != TokenType::RBracket) {
+        Param field;
+        field.type = expectType();
+        expect(TokenType::Colon);
+        field.name = expect(TokenType::Identifier);
+        fields.push_back(field);
+        expect(TokenType::Semicolon);
+    }
+
+    expect(TokenType::RBracket);
+
+    return new StructDeclNode{name, fields};
+}
+
 ASTNode* Parser::outStatement() {
     expect(TokenType::Out);
     ASTNode* output = expression();
@@ -258,12 +303,35 @@ ASTNode* Parser::outStatement() {
     return new OutNode{output};
 }
 
-ASTNode* Parser::assignStatement() {
-    Token target = expect(TokenType::Identifier);
+ASTNode* Parser::assignStatement(ASTNode* target) {
     Token op = advance();
     ASTNode* value = expression();
     expect(TokenType::Semicolon);
     return new AssignNode{target, op, value};
+}
+
+ASTNode* Parser::pushStatement() {
+    expect(TokenType::Push);
+    expect(TokenType::LParen);
+    Token arrayName = expect(TokenType::Identifier);
+    expect(TokenType::Comma);
+    ASTNode* value = expression();
+    expect(TokenType::RParen);
+    expect(TokenType::Semicolon);
+
+    return new PushNode{arrayName, value};
+}
+
+ASTNode* Parser::removeStatement() {
+    expect(TokenType::Remove);
+    expect(TokenType::LParen);
+    Token arrayName = expect(TokenType::Identifier);
+    expect(TokenType::Comma);
+    ASTNode* index = expression();
+    expect(TokenType::RParen);
+    expect(TokenType::Semicolon);
+    
+    return new RemoveNode{arrayName, index};
 }
 
 ASTNode* Parser::exprstatement() {
@@ -314,14 +382,20 @@ ASTNode* Parser::factor() {
 
 ASTNode* Parser::primary() {
     if (peek().type == TokenType::Int || peek().type == TokenType::Float) {
+        // check numbers
+
         Token num = advance();
         return new NumberLiteralNode(num.value);
     }
 
     if (peek().type == TokenType::Identifier) {
+        // if variable declaration
+
         Token id = advance();
         
         if (peek().type == TokenType::BSlash) {
+            // if collection
+
             advance();
             std::vector<ASTNode*> elements;
             elements.push_back(expression());
@@ -336,6 +410,8 @@ ASTNode* Parser::primary() {
         }
 
         if (peek().type == TokenType::Hash) {
+
+            // if index
             bool isGrouped = false;
             advance();
             if (peek().type == TokenType::LParen) {
@@ -346,12 +422,28 @@ ASTNode* Parser::primary() {
             ASTNode* index = expression();
 
             if (isGrouped) expect(TokenType::RParen);
+
+            return new IndexNode{id, index};
+        }
+
+        if (peek().type == TokenType::Dot) {
+            // if instance access
+
+            advance();
+
+            Token field = advance();
+
+            return new FieldAccessNode{new IdentifierNode(id.value), field};
+
+
         }
 
         return new IdentifierNode(id.value);
     }
 
     if (peek().type == TokenType::Call) {
+        // if calling function
+
         expect(TokenType::Call);
         Token name = expect(TokenType::Identifier);
         expect(TokenType::LParen);
@@ -371,7 +463,30 @@ ASTNode* Parser::primary() {
         return new CallNode{name, arguments};
     }
 
-    throw std::runtime_error("Expected expression at line " + std::to_string(peek().line));
+    if (peek().type == TokenType::Question) {
+        // instance creation
+
+        advance();
+        Token structName = expect(TokenType::Identifier);
+        expect(TokenType::LParen);
+
+        std::vector<ASTNode*> arguments;
+
+        while (peek().type != TokenType::RParen) {
+            ASTNode* argument = expression();
+            arguments.push_back(argument);
+            if (peek().type != TokenType::RParen) {
+                expect(TokenType::Comma);
+            }    
+        }
+        
+        expect(TokenType::RParen);
+
+        return new InstanceNode{structName, arguments};
+    }
+
+
+    throw std::runtime_error("P: E27 | Expected expression at line " + std::to_string(peek().line));
 }
 
 ASTNode* Parser::block() {
@@ -426,7 +541,7 @@ void printAST(ASTNode* node, int depth) {
     std::string indent(depth * 2, ' ');
 
     if (auto arr = dynamic_cast<ArrayDeclNode*>(node)) {
-        std::cout << indent << "Array: " << arr->elementType.value << ", size " << arr->size << "\n";
+        std::cout << indent << "Array: " << std::format("'{}', ", arr->name.value) << arr->elementType.value << ", size " << arr->size << "\n";
         for (auto element : arr->elements) {
             printAST(element, depth + 1);
         }
@@ -436,6 +551,7 @@ void printAST(ASTNode* node, int depth) {
         std::cout << indent << "VarDecl: " << v->name.value << " : " << v->type.value << "\n";
         printAST(v->value, depth + 1);
     }
+
     else if (auto b = dynamic_cast<BinaryExprNode*>(node)) {
         std::cout << indent << "BinaryExpr: " << b->op.value << "\n";
         printAST(b->left, depth + 1);
@@ -467,6 +583,11 @@ void printAST(ASTNode* node, int depth) {
             std::cout << indent << "  Else:\n";
             printAST(ifNode->elseBranch, depth + 2);
         }
+    }
+
+    else if (auto idx = dynamic_cast<IndexNode*>(node)) {
+        std::cout << "Index: " << "\n";
+        printAST(idx->index, depth + 1);
     }
 
     else {

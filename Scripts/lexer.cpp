@@ -104,6 +104,8 @@ Token Lexer::nextToken() {
         case('}'): return {TokenType::RBrace, "}", line, column};
         case('~'): return {TokenType::Tilde, "~", line, column};
         case('#'): return {TokenType::Hash, "#", line, column};
+        case('?'): return {TokenType::Question, "?", line, column};
+        case('.'): return {TokenType::Dot, ".", line, column};
         case('='): {
             if (peek() == '=') {
                 advance();
